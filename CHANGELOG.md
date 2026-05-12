@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3 - 2026-05-12
+
+### 修复
+
+- 修复 HLS 代理播放在 master playlist 包含 `EXT-X-MEDIA` 音轨或字幕 rendition 时，默认改写结果可能只保留单个 variant，导致 AVPlayer 失去 ABR 自适应码率空间的问题。
+
+### 改进
+
+- HLS 播放侧默认保留 video variants 并继续过滤 audio-only variant；只有业务显式配置 HLS variant/rendition selection handler 时，才按选择结果锁定播放侧 variant 与 rendition。
+
 ## 1.0.2 - 2026-05-12
 
 ### 改进
