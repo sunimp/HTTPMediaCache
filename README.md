@@ -1,5 +1,12 @@
 # HTTPMediaCache
 
+[![CI](https://github.com/sunimp/HTTPMediaCache/actions/workflows/ci.yml/badge.svg)](https://github.com/sunimp/HTTPMediaCache/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/sunimp/HTTPMediaCache?include_prereleases&sort=semver)](https://github.com/sunimp/HTTPMediaCache/releases)
+[![Swift](https://img.shields.io/badge/Swift-5.10+-orange.svg)](https://swift.org)
+[![Platforms](https://img.shields.io/badge/platform-iOS%2015%2B%20%7C%20macOS%2012%2B-lightgrey.svg)](Package.swift)
+[![SPM](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](Package.swift)
+[![License](https://img.shields.io/github/license/sunimp/HTTPMediaCache)](LICENSE)
+
 HTTPMediaCache 是一个 Swift-only 的本地 HTTP 多媒体缓存库。它通过本地代理承接播放器请求，支持普通文件与 HLS 资源的边播边缓存、Range 请求、预加载、HLS 播放列表改写、缓存查询和缓存清理。
 
 ## 特性
