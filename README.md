@@ -32,7 +32,7 @@ HTTPMediaCache 是一个 Swift-only 的本地 HTTP 多媒体缓存库。它通�
 在 `Package.swift` 中添加依赖：
 
 ```swift
-.package(url: "https://github.com/sunimp/HTTPMediaCache.git", from: "1.0.1")
+.package(url: "https://github.com/sunimp/HTTPMediaCache.git", from: "1.0.2")
 ```
 
 然后将 `HTTPMediaCache` 添加到 target dependencies：
