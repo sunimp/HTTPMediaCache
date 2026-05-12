@@ -312,7 +312,36 @@ final class CacheStorageTests: XCTestCase {
         XCTAssertNotNil(thirdItem)
     }
 
-    func testEvictionUsesUnitQueueOrderInsteadOfLastWriteDate() async throws {
+    func testCachedReadRefreshesEvictionOrder() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let index = CacheIndex(rootDirectory: root)
+        await index.setMaxCacheLength(4)
+
+        let firstURL = try XCTUnwrap(URL(string: "https://example.com/first.mp4"))
+        let secondURL = try XCTUnwrap(URL(string: "https://example.com/second.mp4"))
+        let thirdURL = try XCTUnwrap(URL(string: "https://example.com/third.mp4"))
+
+        let firstUnit = try await index.unit(for: firstURL)
+        try await firstUnit.write(data: Data([0, 1]), offset: 0, totalLength: 2, contentType: "video/mp4")
+        let secondUnit = try await index.unit(for: secondURL)
+        try await secondUnit.write(data: Data([2, 3]), offset: 0, totalLength: 2, contentType: "video/mp4")
+        _ = try await firstUnit.read(range: ByteRange(start: 0, end: 1))
+
+        try await index.prepareForWrite(length: 2, excluding: thirdURL)
+        let thirdUnit = try await index.unit(for: thirdURL)
+        try await thirdUnit.write(data: Data([4, 5]), offset: 0, totalLength: 2, contentType: "video/mp4")
+
+        let firstItem = try await index.cacheItem(for: firstURL)
+        let secondItem = try await index.cacheItem(for: secondURL)
+        let thirdItem = try await index.cacheItem(for: thirdURL)
+
+        XCTAssertNotNil(firstItem)
+        XCTAssertNil(secondItem)
+        XCTAssertNotNil(thirdItem)
+    }
+
+    func testEvictionUsesLeastRecentlyAccessedUnit() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let index = CacheIndex(rootDirectory: root)
@@ -335,8 +364,8 @@ final class CacheStorageTests: XCTestCase {
         let secondItem = try await index.cacheItem(for: secondURL)
         let thirdItem = try await index.cacheItem(for: thirdURL)
 
-        XCTAssertNil(firstItem)
-        XCTAssertNotNil(secondItem)
+        XCTAssertNotNil(firstItem)
+        XCTAssertNil(secondItem)
         XCTAssertNotNil(thirdItem)
     }
 

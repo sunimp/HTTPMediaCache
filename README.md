@@ -75,7 +75,7 @@ await HTTPMediaCache.stop()
 
 ## 项目架构
 
-完整架构图可查看 [Documentation/architecture.html](Documentation/architecture.html)。
+完整架构图可查看 [Documentation/architecture.html](Documentation/architecture.html)，维护说明可查看 [Documentation/architecture.md](Documentation/architecture.md)。
 
 ```mermaid
 flowchart LR
@@ -319,6 +319,8 @@ try await HTTPMediaCache.deleteAllCaches()
 await HTTPMediaCache.setMaxCacheLength(500 * 1024 * 1024)
 let maxLength = await HTTPMediaCache.maxCacheLength()
 ```
+
+当写入新数据会超过最大缓存空间时，缓存索引会按最近访问时间淘汰未使用中的旧缓存，并跳过正在读取或写入的缓存单元。成功写入、读取缓存数据和获取完整缓存文件路径都会刷新缓存单元的最近访问时间；单纯查询 `cacheItem` 或缓存列表不会改变淘汰顺序。
 
 ## 下载配置
 

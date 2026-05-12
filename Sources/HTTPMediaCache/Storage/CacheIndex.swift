@@ -141,12 +141,18 @@ public actor CacheIndex {
             return
         }
 
-        var candidates: [(key: String, unit: CacheUnit)] = []
-        for key in unitKeysInQueueOrder {
+        var candidates: [(key: String, unit: CacheUnit, lastAccessDate: Date, queueOrder: Int)] = []
+        for (queueOrder, key) in unitKeysInQueueOrder.enumerated() {
             guard key != excludedKey, let unit = units[key], await !(unit.isWorking()) else {
                 continue
             }
-            candidates.append((key: key, unit: unit))
+            candidates.append((key: key, unit: unit, lastAccessDate: await unit.cacheItem().lastAccessDate, queueOrder: queueOrder))
+        }
+        candidates.sort {
+            if $0.lastAccessDate != $1.lastAccessDate {
+                return $0.lastAccessDate < $1.lastAccessDate
+            }
+            return $0.queueOrder < $1.queueOrder
         }
 
         for candidate in candidates {

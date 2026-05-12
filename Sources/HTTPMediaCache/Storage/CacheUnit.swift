@@ -164,7 +164,11 @@ public actor CacheUnit {
         }
 
         try handle.seek(toOffset: UInt64(range.start))
-        return try handle.read(upToCount: Int(length))
+        let data = try handle.read(upToCount: Int(length))
+        if data != nil {
+            try markAccessed()
+        }
+        return data
     }
 
     /// 生成当前缓存状态。
@@ -200,6 +204,7 @@ public actor CacheUnit {
         guard ensureCompleteFileExists() else {
             return nil
         }
+        try? markAccessed()
         return completeDataFileURL
     }
 
@@ -234,6 +239,11 @@ public actor CacheUnit {
     /// 当前是否正在被读取或写入。
     public func isWorking() -> Bool {
         workingCount > 0
+    }
+
+    private func markAccessed() throws {
+        lastAccessDate = Date()
+        try persistMetadata()
     }
 
     private func isCached(range: ByteRange) -> Bool {
