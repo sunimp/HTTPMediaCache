@@ -1,0 +1,24 @@
+name: 功能建议
+description: 提出新能力或改进建议
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 背景和问题
+      description: 请说明当前场景中的限制或痛点。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 请说明希望增加或调整的能力。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 其他方案
+      description: 如果有替代方案或兼容性要求，请一并说明。

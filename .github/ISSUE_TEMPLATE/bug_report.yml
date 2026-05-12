@@ -1,0 +1,42 @@
+name: Bug 反馈
+description: 报告可复现的问题
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请说明实际行为和预期行为。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请提供稳定复现步骤或最小复现代码。
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 使用版本
+      placeholder: 1.0.0 或 commit hash
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: 平台
+      placeholder: iOS 17.5 / macOS 14.5 / Swift 5.9
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      render: text
