@@ -50,7 +50,7 @@ public struct HLSPlaylistRewriter: Sendable {
         }
 
         let parsed = HLSPlaylistParser().parse(playlist: playlist, sourceURL: baseURL)
-        let selectedURLs = await selectedPlaybackURLs(in: parsed, originalURL: baseURL, currentURL: baseURL)
+        let selection = await playbackSelection(in: parsed, originalURL: baseURL, currentURL: baseURL)
         let lines = playlist.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
         var rewrittenLines: [String] = []
@@ -63,7 +63,7 @@ public struct HLSPlaylistRewriter: Sendable {
                 if let uriIndex = nextURIIndex(after: index, in: lines),
                    let url = URL(string: lines[uriIndex], relativeTo: baseURL)?.absoluteURL
                 {
-                    if selectedURLs.isEmpty || selectedURLs.contains(url) {
+                    if !selection.filtersVariants || selection.variantURLs.contains(url) {
                         rewrittenLines.append(rewriteURIAttribute(in: text, baseURL: baseURL, kind: nil))
                         var cursor = index + 1
                         while cursor < uriIndex {
@@ -82,7 +82,7 @@ public struct HLSPlaylistRewriter: Sendable {
             }
 
             if text.hasPrefix("#EXT-X-MEDIA:"),
-               let rewritten = rewriteRenditionLine(text, baseURL: baseURL, selectedURLs: selectedURLs)
+               let rewritten = rewriteRenditionLine(text, baseURL: baseURL, selection: selection)
             {
                 rewrittenLines.append(rewritten)
             } else if !text.hasPrefix("#EXT-X-MEDIA:") {
@@ -107,7 +107,7 @@ public struct HLSPlaylistRewriter: Sendable {
         return rewrittenLines.joined(separator: "\n")
     }
 
-    private func rewriteRenditionLine(_ line: String, baseURL: URL, selectedURLs: Set<URL>) -> String? {
+    private func rewriteRenditionLine(_ line: String, baseURL: URL, selection: HLSPlaybackSelection) -> String? {
         guard let uriRange = line.range(of: "URI=") else {
             return line
         }
@@ -131,7 +131,7 @@ public struct HLSPlaylistRewriter: Sendable {
         guard let url = URL(string: uriText, relativeTo: baseURL)?.absoluteURL else {
             return line
         }
-        guard selectedURLs.isEmpty || selectedURLs.contains(url) else {
+        guard !selection.filtersRenditions || selection.renditionURLs.contains(url) else {
             return nil
         }
         return rewriteURIAttribute(in: line, baseURL: baseURL, kind: renditionKind(from: line))
@@ -285,12 +285,12 @@ public struct HLSPlaylistRewriter: Sendable {
         return attributes
     }
 
-    private func selectedPlaybackURLs(
+    private func playbackSelection(
         in playlist: HLSPlaylist,
         originalURL: URL,
         currentURL: URL
-    ) async -> Set<URL> {
-        await HLSSelectionResolver().selectedPlaybackURLs(in: playlist, originalURL: originalURL, currentURL: currentURL)
+    ) async -> HLSPlaybackSelection {
+        await HLSSelectionResolver().playbackSelection(in: playlist, originalURL: originalURL, currentURL: currentURL)
     }
 
     private func nextURIIndex(after index: Int, in lines: [String]) -> Int? {

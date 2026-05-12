@@ -121,6 +121,31 @@ final class HLSPlaylistRewriterTests: XCTestCase {
         XCTAssertFalse(output.contains("iframe"))
     }
 
+    func testProxyPlaybackRewritePreservesVariantsWhenRenditionsExistWithoutSelectionHandlers() async throws {
+        let codec = ProxyURLCodec(port: 8123)
+        let rewriter = HLSPlaylistRewriter(codec: codec)
+        let playlist = """
+        #EXTM3U
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="AAC",DEFAULT=YES,URI="audio/aac/index.m3u8"
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="Atmos",DEFAULT=YES,URI="audio/ec3/index.m3u8"
+        #EXT-X-STREAM-INF:BANDWIDTH=1000000,VIDEO-RANGE=SDR,CODECS="avc1.64001f,mp4a.40.2",AUDIO="aac"
+        sdr/index.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=30000000,VIDEO-RANGE=PQ,CODECS="dvh1.05.06,ec-3",AUDIO="ec3"
+        dolby/index.m3u8
+        #EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=300000,URI="iframe/index.m3u8"
+        """
+        let base = try XCTUnwrap(URL(string: "https://example.com/master.m3u8"))
+
+        let output = try await rewriter.rewriteForProxyPlayback(playlist: playlist, baseURL: base)
+
+        XCTAssertEqual(output.components(separatedBy: "#EXT-X-STREAM-INF").count - 1, 2)
+        XCTAssertTrue(output.contains("sdr%2Findex%2Em3u8"))
+        XCTAssertTrue(output.contains("dolby%2Findex%2Em3u8"))
+        XCTAssertTrue(output.contains("audio%2Faac%2Findex%2Em3u8"))
+        XCTAssertTrue(output.contains("audio%2Fec3%2Findex%2Em3u8"))
+        XCTAssertFalse(output.contains("iframe"))
+    }
+
     func testProxyPlaybackRewriteSelectsVideoVariantWhenMasterAlsoContainsAudioOnlyVariants() async throws {
         let codec = ProxyURLCodec(port: 8123)
         let rewriter = HLSPlaylistRewriter(codec: codec)
@@ -166,7 +191,13 @@ final class HLSPlaylistRewriterTests: XCTestCase {
         XCTAssertFalse(output.contains("iframe"))
     }
 
-    func testProxyPlaybackRewriteSelectsDefaultVariantWhenRenditionsExist() async throws {
+    func testProxyPlaybackRewriteSelectsDefaultVariantWhenSelectionHandlersExist() async throws {
+        await HTTPMediaCache.setHLSVariantStreamSelectionHandler { streams, _, _ in
+            streams.first { $0.url.absoluteString.contains("/sdr/") }
+        }
+        await HTTPMediaCache.setHLSRenditionSelectionHandler { _, renditions, _, _ in
+            renditions.first { $0.url?.absoluteString.contains("/aac/") == true }
+        }
         let codec = ProxyURLCodec(port: 8123)
         let rewriter = HLSPlaylistRewriter(codec: codec)
         let playlist = """

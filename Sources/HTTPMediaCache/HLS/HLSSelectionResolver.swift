@@ -22,6 +22,20 @@ struct HLSSelectedResources: Equatable {
     }
 }
 
+struct HLSPlaybackSelection: Equatable {
+    var variantURLs: Set<URL>
+    var renditionURLs: Set<URL>
+    var filtersVariants: Bool
+    var filtersRenditions: Bool
+
+    static let unrestricted = HLSPlaybackSelection(
+        variantURLs: [],
+        renditionURLs: [],
+        filtersVariants: false,
+        filtersRenditions: false
+    )
+}
+
 struct HLSSelectionResolver {
     func selectedResources(
         in playlist: HLSPlaylist,
@@ -45,21 +59,33 @@ struct HLSSelectionResolver {
         return HLSSelectedResources(variant: selectedVariant, renditions: renditions)
     }
 
-    func selectedPlaybackURLs(
+    func playbackSelection(
         in playlist: HLSPlaylist,
         originalURL: URL,
         currentURL: URL
-    ) async -> Set<URL> {
+    ) async -> HLSPlaybackSelection {
         let hasSelectionHandler = await CacheRuntime.shared.hasHLSSelectionHandler()
-        guard hasSelectionHandler || !playlist.renditions.isEmpty || playlist.hasMixedVideoAndAudioOnlyVariants else {
-            return []
+
+        guard hasSelectionHandler else {
+            if playlist.hasMixedVideoAndAudioOnlyVariants {
+                return HLSPlaybackSelection(
+                    variantURLs: Set(playlist.variantStreams.filter(\.hasVideoTrackSignal).map(\.url)),
+                    renditionURLs: [],
+                    filtersVariants: true,
+                    filtersRenditions: false
+                )
+            }
+            return .unrestricted
         }
 
-        if !hasSelectionHandler, playlist.renditions.isEmpty, playlist.hasMixedVideoAndAudioOnlyVariants {
-            return Set(playlist.variantStreams.filter(\.hasVideoTrackSignal).map(\.url))
-        }
+        let selected = await selectedResources(in: playlist, originalURL: originalURL, currentURL: currentURL)
 
-        return await selectedResources(in: playlist, originalURL: originalURL, currentURL: currentURL).urls
+        return HLSPlaybackSelection(
+            variantURLs: Set([selected.variant?.url].compactMap { $0 }),
+            renditionURLs: Set(selected.renditions.compactMap(\.url)),
+            filtersVariants: true,
+            filtersRenditions: true
+        )
     }
 
     private func selectedRendition(
