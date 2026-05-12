@@ -50,6 +50,14 @@ final class NIOProxyServerTests: XCTestCase {
         XCTAssertEqual(HTTPMediaCache.originalURL(from: original), original)
     }
 
+    func testEventLoopThreadCountIsClampedToAtLeastOne() async {
+        let server = NIOProxyServer(eventLoopThreadCount: 0)
+
+        let threadCount = await server.eventLoopThreadCount
+
+        XCTAssertEqual(threadCount, 1)
+    }
+
     func testStreamingBodyFailureAfterResponseHeadDoesNotWriteSecondResponse() async throws {
         let storageRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let original = try XCTUnwrap(URL(string: "https://example.com/video.ts"))

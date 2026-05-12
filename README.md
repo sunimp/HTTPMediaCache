@@ -322,6 +322,10 @@ let maxLength = await HTTPMediaCache.maxCacheLength()
 
 当写入新数据会超过最大缓存空间时，缓存索引会按最近访问时间淘汰未使用中的旧缓存，并跳过正在读取或写入的缓存单元。成功写入、读取缓存数据和获取完整缓存文件路径都会刷新缓存单元的最近访问时间；单纯查询 `cacheItem` 或缓存列表不会改变淘汰顺序。
 
+默认缓存目录为系统 `Caches/HTTPMediaCache`。系统可按平台策略清理该目录，业务侧仍可通过 `deleteCache` 或 `deleteAllCaches` 主动清理缓存。
+
+如果单次写入长度超过最大缓存空间，相关预加载、读取或代理链路会抛出 `CacheError.insufficientCacheSpace(requiredLength:maxCacheLength:)`，调用方可以按需单独处理该错误。
+
 ## 下载配置
 
 可以配置下载超时、透传请求头、额外请求头和可接受的响应类型：

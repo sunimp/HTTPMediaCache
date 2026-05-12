@@ -17,6 +17,7 @@ public actor CacheIndex {
     private let fileStore: FileStore
     private var units: [String: CacheUnit]
     private var unitKeysInQueueOrder: [String]
+    private var loadState: LoadState
     private var maxCacheLength: Int64
     private var urlConverter: (@Sendable (URL) -> URL)?
     private var cacheIdentifierProvider: (@Sendable (URL) -> String)?
@@ -26,13 +27,14 @@ public actor CacheIndex {
         self.rootDirectory = rootDirectory
         fileStore = FileStore()
         maxCacheLength = Self.defaultMaxCacheLength
-        let loadedUnits = Self.loadUnits(rootDirectory: rootDirectory)
-        units = loadedUnits.units
-        unitKeysInQueueOrder = loadedUnits.unitKeysInQueueOrder
+        units = [:]
+        unitKeysInQueueOrder = []
+        loadState = .unloaded
     }
 
     /// 获取或创建指定 URL 的缓存单元。
-    public func unit(for url: URL) throws -> CacheUnit {
+    public func unit(for url: URL) async throws -> CacheUnit {
+        await ensureLoaded()
         let key = cacheKey(for: url)
         if let unit = units[key] {
             return unit
@@ -50,6 +52,7 @@ public actor CacheIndex {
 
     /// 查询指定 URL 的缓存状态。
     public func cacheItem(for url: URL) async throws -> CacheItem? {
+        await ensureLoaded()
         guard let unit = units[cacheKey(for: url)] else {
             return nil
         }
@@ -59,6 +62,7 @@ public actor CacheIndex {
 
     /// 查询所有缓存条目。
     public func allCacheItems() async -> [CacheItem] {
+        await ensureLoaded()
         var items: [CacheItem] = []
         for unit in units.values {
             await items.append(unit.cacheItem())
@@ -68,6 +72,7 @@ public actor CacheIndex {
 
     /// 统计当前缓存总字节数。
     public func totalCacheLength() async -> Int64 {
+        await ensureLoaded()
         var length: Int64 = 0
         for unit in units.values {
             length += await unit.rawCacheLength()
@@ -77,6 +82,7 @@ public actor CacheIndex {
 
     /// 获取已完整缓存文件的本地路径。
     public func completeFileURL(for url: URL) async throws -> URL? {
+        await ensureLoaded()
         guard let unit = units[cacheKey(for: url)] else {
             return nil
         }
@@ -85,6 +91,7 @@ public actor CacheIndex {
 
     /// 删除指定 URL 的缓存；正在使用的缓存单元会跳过删除。
     public func deleteCache(for url: URL) async {
+        await ensureLoaded()
         let key = cacheKey(for: url)
         let unit = units[key]
         if let unit, await unit.isWorking() {
@@ -102,6 +109,7 @@ public actor CacheIndex {
 
     /// 删除全部未使用中的缓存。
     public func deleteAllCaches() async {
+        await ensureLoaded()
         let currentUnits = await units.asyncMap { key, unit in
             await (key: key, unit: unit, isWorking: unit.isWorking())
         }
@@ -127,12 +135,13 @@ public actor CacheIndex {
 
     /// 为即将写入的数据预留空间，必要时按访问顺序淘汰缓存。
     public func prepareForWrite(length: Int64, excluding url: URL) async throws {
+        await ensureLoaded()
         guard maxCacheLength < Int64.max, length > 0 else {
             return
         }
 
         guard length <= maxCacheLength else {
-            throw CacheError.storageFailure("Not enough cache space.")
+            throw CacheError.insufficientCacheSpace(requiredLength: length, maxCacheLength: maxCacheLength)
         }
 
         let excludedKey = cacheKey(for: url)
@@ -166,7 +175,7 @@ public actor CacheIndex {
         }
 
         if totalLength + length > maxCacheLength {
-            throw CacheError.storageFailure("Not enough cache space.")
+            throw CacheError.insufficientCacheSpace(requiredLength: length, maxCacheLength: maxCacheLength)
         }
     }
 
@@ -201,6 +210,33 @@ public actor CacheIndex {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    private func ensureLoaded() async {
+        switch loadState {
+        case .loaded:
+            return
+        case let .loading(task):
+            let loadedUnits = await task.value
+            finishLoading(loadedUnits)
+        case .unloaded:
+            let rootDirectory = rootDirectory
+            let task = Task.detached(priority: .utility) {
+                Self.loadUnits(rootDirectory: rootDirectory)
+            }
+            loadState = .loading(task)
+            let loadedUnits = await task.value
+            finishLoading(loadedUnits)
+        }
+    }
+
+    private func finishLoading(_ loadedUnits: (units: [String: CacheUnit], unitKeysInQueueOrder: [String])) {
+        guard case .loaded = loadState else {
+            units = loadedUnits.units
+            unitKeysInQueueOrder = loadedUnits.unitKeysInQueueOrder
+            loadState = .loaded
+            return
+        }
+    }
+
     private static func loadUnits(rootDirectory: URL) -> (units: [String: CacheUnit], unitKeysInQueueOrder: [String]) {
         guard let directories = try? FileManager.default.contentsOfDirectory(
             at: rootDirectory,
@@ -226,6 +262,12 @@ public actor CacheIndex {
         }
         return (units, loadedUnits.map(\.key))
     }
+}
+
+private enum LoadState {
+    case unloaded
+    case loading(Task<(units: [String: CacheUnit], unitKeysInQueueOrder: [String]), Never>)
+    case loaded
 }
 
 private extension Sequence {

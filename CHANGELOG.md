@@ -4,6 +4,11 @@
 
 ### 改进
 
+- 默认缓存目录调整为系统 Caches 下的 `HTTPMediaCache`，不再使用 Documents 作为媒体缓存目录。
+- 缓存索引改为首次访问时懒加载磁盘缓存，避免初始化阶段同步扫描大缓存目录。
+- 空间不足错误新增结构化 `CacheError.insufficientCacheSpace(requiredLength:maxCacheLength:)`，便于调用方按错误类型处理。
+- 本地代理 NIO EventLoop 默认按处理器数量配置线程数，并收敛代理运行状态维护。
+- 简化预加载完成、取消和失败路径的公共清理逻辑。
 - 缓存空间淘汰策略升级为 LRU：成功写入、读取缓存数据和获取完整缓存文件路径会刷新缓存单元的最近访问时间；缓存状态查询不改变淘汰顺序。
 - 拆分代理路由内部职责，提取请求解析、缓存响应、回源下载、响应校验、HLS playlist 响应和代理响应写入适配，降低 `HTTPRequestRouter` 维护复杂度。
 - 拆分 `URLSessionDownloader` 内部职责，提取 streaming delegate、下载配置、响应校验、重试策略和后台任务协调。

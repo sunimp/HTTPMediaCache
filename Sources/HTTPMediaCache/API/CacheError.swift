@@ -19,6 +19,8 @@ public enum CacheError: Error, Equatable {
     case unsupportedContentType(String?)
     /// 网络请求失败。
     case networkFailure(String)
+    /// 请求写入长度超过当前最大缓存空间。
+    case insufficientCacheSpace(requiredLength: Int64, maxCacheLength: Int64)
     /// 缓存文件或索引读写失败。
     case storageFailure(String)
 }

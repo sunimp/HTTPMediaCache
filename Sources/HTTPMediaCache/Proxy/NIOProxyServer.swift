@@ -16,23 +16,39 @@ import NIOHTTP1
 
 /// 基于 SwiftNIO 的本地 HTTP 代理服务。
 public actor NIOProxyServer {
-    private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    let eventLoopThreadCount: Int
+    private let group: MultiThreadedEventLoopGroup
     private var channel: Channel?
     private var codec: ProxyURLCodec?
-    private var wantsRunning = false
-    private var requestedPort: UInt16 = 0
+    private var state = ServerState.stopped
     private var foregroundObserver: ForegroundRestartObserver?
 
     /// 代理服务是否正在运行。
-    public private(set) var isRunning = false
+    public var isRunning: Bool {
+        if case .running = state {
+            return true
+        }
+        return false
+    }
 
     /// 创建本地代理服务。
-    public init() {}
+    public init() {
+        self.init(eventLoopThreadCount: Self.defaultEventLoopThreadCount)
+    }
+
+    init(eventLoopThreadCount: Int) {
+        let resolvedThreadCount = max(1, eventLoopThreadCount)
+        self.eventLoopThreadCount = resolvedThreadCount
+        group = MultiThreadedEventLoopGroup(numberOfThreads: resolvedThreadCount)
+    }
+
+    deinit {
+        try? group.syncShutdownGracefully()
+    }
 
     /// 启动代理服务。
     public func start(port: UInt16) async throws {
-        wantsRunning = true
-        requestedPort = port
+        state = .starting(requestedPort: port)
         if foregroundObserver == nil {
             foregroundObserver = ForegroundRestartObserver { [weak self] in
                 Task {
@@ -41,6 +57,7 @@ public actor NIOProxyServer {
             }
         }
         guard channel == nil else {
+            state = .running(requestedPort: port)
             return
         }
 
@@ -52,20 +69,26 @@ public actor NIOProxyServer {
                 }
             }
 
-        let bound = try await bootstrap.bind(host: "0.0.0.0", port: Int(port)).get()
-        channel = bound
-        let actualPort = bound.localAddress?.port ?? Int(port)
-        codec = ProxyURLCodec(port: UInt16(actualPort))
-        isRunning = true
+        do {
+            let bound = try await bootstrap.bind(host: "0.0.0.0", port: Int(port)).get()
+            channel = bound
+            let actualPort = bound.localAddress?.port ?? Int(port)
+            codec = ProxyURLCodec(port: UInt16(actualPort))
+            state = .running(requestedPort: port)
+        } catch {
+            channel = nil
+            codec = nil
+            state = .stopped
+            throw error
+        }
     }
 
     /// 停止代理服务。
     public func stop() async {
-        wantsRunning = false
+        state = .stopped
         try? await channel?.close().get()
         channel = nil
         codec = nil
-        isRunning = false
     }
 
     /// 将原始 URL 转成当前代理服务可处理的 URL。
@@ -85,7 +108,7 @@ public actor NIOProxyServer {
     }
 
     private func restartAfterForegroundIfNeeded() async {
-        guard wantsRunning else {
+        guard case let .running(requestedPort) = state else {
             return
         }
 
@@ -96,7 +119,7 @@ public actor NIOProxyServer {
         try? await channel?.close().get()
         channel = nil
         codec = nil
-        isRunning = false
+        state = .stopped
         try? await start(port: requestedPort)
     }
 
@@ -118,6 +141,16 @@ public actor NIOProxyServer {
             return false
         }
     }
+
+    private static var defaultEventLoopThreadCount: Int {
+        max(1, ProcessInfo.processInfo.activeProcessorCount)
+    }
+}
+
+private enum ServerState {
+    case stopped
+    case starting(requestedPort: UInt16)
+    case running(requestedPort: UInt16)
 }
 
 private final class ForegroundRestartObserver: NSObject, @unchecked Sendable {

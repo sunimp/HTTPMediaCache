@@ -61,6 +61,13 @@ public enum HTTPMediaCache {
         let task = Task<Void, Error> {
             await startGate.wait()
             var didEnterPreloadQueue = false
+            func finishPreload() async {
+                if didEnterPreloadQueue {
+                    await PreloadCoordinator.shared.leave()
+                }
+                await PreloadCoordinator.shared.unregister(id: taskID)
+                progress.finish()
+            }
             do {
                 try await withTaskCancellationHandler {
                     try await PreloadCoordinator.shared.enter(id: taskID)
@@ -78,27 +85,15 @@ public enum HTTPMediaCache {
                     progress: progress
                 )
                 await CacheLogStore.shared.cleanError(for: request.url)
-                if didEnterPreloadQueue {
-                    await PreloadCoordinator.shared.leave()
-                }
+                await finishPreload()
             } catch is CancellationError {
-                if didEnterPreloadQueue {
-                    await PreloadCoordinator.shared.leave()
-                }
-                await PreloadCoordinator.shared.unregister(id: taskID)
-                progress.finish()
+                await finishPreload()
                 throw CancellationError()
             } catch {
-                if didEnterPreloadQueue {
-                    await PreloadCoordinator.shared.leave()
-                }
                 await addError(error, for: request.url)
-                await PreloadCoordinator.shared.unregister(id: taskID)
-                progress.finish()
+                await finishPreload()
                 throw error
             }
-            await PreloadCoordinator.shared.unregister(id: taskID)
-            progress.finish()
         }
         await PreloadCoordinator.shared.register(id: taskID, task: task)
         await startGate.open()

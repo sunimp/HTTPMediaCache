@@ -11,7 +11,7 @@ actor CacheRuntime {
     static let shared = CacheRuntime()
 
     private(set) var server = NIOProxyServer()
-    private(set) var cacheIndex = CacheIndex(rootDirectory: CacheRuntime.defaultRootDirectory)
+    private(set) var cacheIndex = CacheIndex(rootDirectory: CacheRuntime.defaultRootDirectoryURL)
     private(set) var downloader: any CacheDownloading = URLSessionDownloader()
     private var hlsContentHandler: (@Sendable (String) -> String)?
     private var hlsVariantStreamSelectionHandler: HLSVariantStreamSelectionHandler?
@@ -95,9 +95,12 @@ actor CacheRuntime {
         return renditions.first { $0.isDefault } ?? renditions.first
     }
 
-    private func defaultVariantStream(from variants: [HLSVariantStreamItem]) -> HLSVariantStreamItem {
+    private func defaultVariantStream(from variants: [HLSVariantStreamItem]) -> HLSVariantStreamItem? {
+        guard let fallback = fallbackVariantStream(from: variants) else {
+            return nil
+        }
         guard variants.contains(where: { $0.codecs != nil || $0.videoRange != nil || $0.averageBandwidth > 0 }) else {
-            return variants[variants.count / 2]
+            return fallback
         }
 
         return variants.min { lhs, rhs in
@@ -107,7 +110,14 @@ actor CacheRuntime {
                 return left < right
             }
             return effectiveBandwidth(lhs) < effectiveBandwidth(rhs)
-        } ?? variants[variants.count / 2]
+        } ?? fallback
+    }
+
+    private func fallbackVariantStream(from variants: [HLSVariantStreamItem]) -> HLSVariantStreamItem? {
+        guard !variants.isEmpty else {
+            return nil
+        }
+        return variants[variants.count / 2]
     }
 
     private func variantCompatibilityScore(_ variant: HLSVariantStreamItem) -> Int {
@@ -116,19 +126,19 @@ actor CacheRuntime {
         var score = 0
 
         if videoRange == "PQ" || videoRange == "HLG" {
-            score += 100
+            score += VariantCompatibilityScore.hdrPenalty
         }
         if codecs.contains("dvh") || codecs.contains("dvhe") {
-            score += 100
+            score += VariantCompatibilityScore.dolbyVisionPenalty
         }
         if codecs.contains("ec-3") || codecs.contains("ac-3") {
-            score += 20
+            score += VariantCompatibilityScore.surroundAudioPenalty
         }
         if codecs.contains("mp4a") {
-            score -= 10
+            score += VariantCompatibilityScore.commonCodecBonus
         }
         if codecs.contains("avc1") {
-            score -= 10
+            score += VariantCompatibilityScore.commonCodecBonus
         }
 
         return score
@@ -157,10 +167,20 @@ actor CacheRuntime {
         await cacheIndex.setCacheIdentifierProvider(provider)
     }
 
-    private static var defaultRootDirectory: URL {
-        let baseDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ??
-            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return baseDirectory
-            .appendingPathComponent("HTTPMediaCache", isDirectory: true)
+    static func defaultRootDirectory(cachesDirectory: URL, documentsDirectory _: URL) -> URL {
+        cachesDirectory.appendingPathComponent("HTTPMediaCache", isDirectory: true)
     }
+
+    private static var defaultRootDirectoryURL: URL {
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? cachesDirectory
+        return defaultRootDirectory(cachesDirectory: cachesDirectory, documentsDirectory: documentsDirectory)
+    }
+}
+
+private enum VariantCompatibilityScore {
+    static let hdrPenalty = 100
+    static let dolbyVisionPenalty = 100
+    static let surroundAudioPenalty = 20
+    static let commonCodecBonus = -10
 }

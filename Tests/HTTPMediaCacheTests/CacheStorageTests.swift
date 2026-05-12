@@ -99,6 +99,37 @@ final class CacheStorageTests: XCTestCase {
         XCTAssertEqual(item?.zones, [ByteRange(start: 0, end: 3)])
     }
 
+    func testCacheIndexDefersDiskLoadUntilFirstAccess() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = try XCTUnwrap(URL(string: "https://example.com/video.mp4"))
+        let firstIndex = CacheIndex(rootDirectory: root)
+        let unit = try await firstIndex.unit(for: url)
+        try await unit.write(data: Data([0, 1, 2, 3]), offset: 0, totalLength: 4, contentType: "video/mp4")
+
+        let secondIndex = CacheIndex(rootDirectory: root)
+        try FileManager.default.removeItem(at: root)
+        let item = try await secondIndex.cacheItem(for: url)
+
+        XCTAssertNil(item)
+    }
+
+    func testPrepareForWriteThrowsStructuredInsufficientCacheSpaceError() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let index = CacheIndex(rootDirectory: root)
+        await index.setMaxCacheLength(4)
+        let url = try XCTUnwrap(URL(string: "https://example.com/video.mp4"))
+
+        do {
+            try await index.prepareForWrite(length: 8, excluding: url)
+            XCTFail("prepareForWrite should reject writes larger than max cache length.")
+        } catch let CacheError.insufficientCacheSpace(requiredLength, maxCacheLength) {
+            XCTAssertEqual(requiredLength, 8)
+            XCTAssertEqual(maxCacheLength, 4)
+        }
+    }
+
     func testCompleteFileURLRequiresSingleContiguousLeadingZone() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -395,6 +426,39 @@ final class CacheStorageTests: XCTestCase {
         XCTAssertEqual(item?.cachedLength, 4)
         XCTAssertEqual(item?.zones, [ByteRange(start: 0, end: 3)])
         XCTAssertNotNil(completeURL)
+    }
+
+    func testDefaultRootDirectoryUsesCachesDirectory() {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cachesDirectory = sandbox.appendingPathComponent("Caches", isDirectory: true)
+        let documentsDirectory = sandbox.appendingPathComponent("Documents", isDirectory: true)
+
+        let root = CacheRuntime.defaultRootDirectory(
+            cachesDirectory: cachesDirectory,
+            documentsDirectory: documentsDirectory
+        )
+
+        XCTAssertEqual(root, cachesDirectory.appendingPathComponent("HTTPMediaCache", isDirectory: true))
+    }
+
+    func testDefaultRootDirectoryDoesNotMigrateExistingDocumentsCache() throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cachesDirectory = sandbox.appendingPathComponent("Caches", isDirectory: true)
+        let documentsDirectory = sandbox.appendingPathComponent("Documents", isDirectory: true)
+        let legacyRoot = documentsDirectory.appendingPathComponent("HTTPMediaCache", isDirectory: true)
+        let newRoot = cachesDirectory.appendingPathComponent("HTTPMediaCache", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacyRoot, withIntermediateDirectories: true)
+
+        let root = CacheRuntime.defaultRootDirectory(
+            cachesDirectory: cachesDirectory,
+            documentsDirectory: documentsDirectory
+        )
+
+        XCTAssertEqual(root, newRoot)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyRoot.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newRoot.path))
     }
 }
 
